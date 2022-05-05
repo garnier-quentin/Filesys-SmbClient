@@ -2,10 +2,15 @@ package Filesys::SmbClient;
  
 # module Filesys::SmbClient : provide function to access Samba filesystem
 # with libsmclient.so
-# Copyright 2000-2006 A.Barbet alian@alianwebserver.com.  All rights reserved.
+# Copyright 2000-2012 A.Barbet alian@cpan.org.  All rights reserved.
 
 # $Log: SmbClient.pm,v $
-# Revision 3.1  2006/09/13 13:49:32  alian
+# Revision 4.0 compatible samba4 only 
+#
+# Revision 3.2 2012/12/04 14:49:32  alian
+#
+# release 3.2: implements connection close with smbc_free_context (acca@cpan.org)
+#
 # release 3.1: fix for rt#12221 rt#18757 rt#13173 and bug in configure
 #
 # Revision 3.0  2005/03/04 16:15:00  alian
@@ -34,9 +39,6 @@ use constant SMBC_DIR => 7;
 use constant SMBC_FILE => 8;
 use constant SMBC_LINK => 9;
 use constant MAX_LENGTH_LINE => 4096;
-use constant SMB_CTX_FLAG_USE_KERBEROS => (1 << 0);
-use constant SMB_CTX_FLAG_FALLBACK_AFTER_KERBEROS => (1 << 1);
-use constant SMBCCTX_FLAG_NO_AUTO_ANONYMOUS_LOGON => (1 << 2);
 
 use vars qw($AUTOLOAD $VERSION @ISA @EXPORT);
 require Exporter;
@@ -50,10 +52,8 @@ my $DEBUG = 0;
 @ISA = qw(Exporter DynaLoader Tie::Handle);
 @EXPORT = qw(SMBC_DIR SMBC_WORKGROUP SMBC_SERVER SMBC_FILE_SHARE
 	     SMBC_PRINTER_SHARE SMBC_COMMS_SHARE SMBC_IPC_SHARE SMBC_FILE
-	     SMBC_LINK _write _open _close _read _lseek 
-	     SMB_CTX_FLAG_USE_KERBEROS SMB_CTX_FLAG_FALLBACK_AFTER_KERBEROS
-             SMBCCTX_FLAG_NO_AUTO_ANONYMOUS_LOGON);
-$VERSION = ('$Revision: 3.1 $ ' =~ /(\d+\.\d+)/)[0];
+	     SMBC_LINK _write _open _close _read _lseek);
+$VERSION = ('$Revision: 4.0 $ ' =~ /(\d+\.\d+)/)[0];
 
 bootstrap Filesys::SmbClient $VERSION;
 
@@ -246,39 +246,13 @@ sub new   {
     $self->{params}= \%vars;
   }
   else { @l =("","","",0); }
-  # Here is a temporary hack:
-  # Actually libsmbclient will segfault if it can't find file
-  # $ENV{HOME}/.smb/smb.conf so I will test if it exist,
-  # and create it if no file is found. A empty file is enough ...
-  # In cgi environnement, $ENV{HOME} can be unset because
-  # nobody is not a real user. So I will set $ENV{HOME} to dir /tmp
-  if (!$ENV{HOME}) {$ENV{HOME}="/tmp";}
-  if (!-e "$ENV{HOME}/.smb/smb.conf") {
-    print STDERR "you don't have a $ENV{HOME}/.smb/smb.conf, ",
-      "I will create it (empty file)\n";
-    mkdir "$ENV{HOME}/.smb",0755 unless (-e "$ENV{HOME}/.smb");
-    open(F,">$ENV{HOME}/.smb/smb.conf") || 
-      die "Can't create $ENV{HOME}/.smb/smb.conf : $!\n";
-    close(F);
-  }
-  # End of temporary hack
 
   $self->{context} = _init(@l);
-  $vars{'flags'} && _set_flags($self->{context}, $vars{'flags'});
-  die 'You must have a samba configuration file '.
-    '($HOME/.smb/smb.conf , even if it is empty' unless $self->{context};
+  if ($vars{'useKerberos'}) { _setOptionUseKerberos($self->{context}, $vars{'useKerberos'}); };
+  if ($vars{'noAutoAnonymousLogin'}) { _setOptionNoAutoAnonymousLogin($self->{context}, $vars{'noAutoAnonymousLogin'}); };
+  if ($vars{'fallbackAfterKerberos'}) { _setOptionFallbackAfterKerberos($self->{context}, $vars{'fallbackAfterKerberos'}); };
   return $self;
 }
-
-#------------------------------------------------------------------------------
-# set_flag
-#------------------------------------------------------------------------------
-sub set_flag {
-  my $self = shift;
-  my $flag = shift;
-  _set_flags($self->{context}, $flag);
-}
-
 
 #------------------------------------------------------------------------------
 # readdir_struct
@@ -383,6 +357,13 @@ sub rmdir_recurse  {
   return $self->rmdir($url);
 }
 
+#------------------------------------------------------------------------------
+# shutdown
+#------------------------------------------------------------------------------
+sub shutdown  {
+  my ($self, $flag)=@_;
+  return _shutdown($self->{context}, $flag);
+}
 
 1;
 
@@ -438,7 +419,7 @@ When a path is used, his scheme is :
 
 =head1 VERSION
 
-$Revision: 3.1 $
+$Revision: 3.2 $
 
 =head1 FONCTIONS
 
@@ -467,10 +448,6 @@ workgroup
 
 debug
 
-=item *
-
-flags : See set_flag
-
 =back
 
 Return instance of Filesys::SmbClient on succes, die with error else.
@@ -481,22 +458,6 @@ Example:
 				   password  => "speed", 
 				   workgroup => "alian",
 				   debug     => 10);
-
-
-=item set_flag
-
-Set flag for smb connection. See _SMBCCTX->flags in libsmclient.h
-Flag can be:
-
-=over
-
-=item SMB_CTX_FLAG_USE_KERBEROS
-
-=item SMB_CTX_FLAG_FALLBACK_AFTER_KERBEROS
-
-=item SMBCCTX_FLAG_NO_AUTO_ANONYMOUS_LOGON
-
-=back
 
 =back
 
@@ -793,6 +754,22 @@ Close file FILEHANDLE. Return 0 on success, else -1 is return and
 errno and $! is set.
 
 =back
+
+=item shutdown flag
+
+A wrapper around `libsmbclient's `smbc_free_context'.
+
+Close open files, release Samba connection, delete context,
+aquired during open_* calls.
+
+Example:
+
+    $smb->shutdown(0); # Gracefully close connection
+    $sbm->shutdown(1); # Forcibly close files and connection
+
+NOTE:
+    shutdown(1) may cause complaints about talloc memory
+    leaks, if there are currently no open files.
 
 =head2 Print method
 

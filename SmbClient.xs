@@ -17,7 +17,7 @@ char *alloca ();
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
-#include "libsmbclient.h"
+#include <samba-4.0/libsmbclient.h>
 #include "libauthSamba.h"
 #include "config.h"
 
@@ -40,56 +40,57 @@ CODE:
  */	
 SMBCCTX *context;
 context = smbc_new_context();
-context->debug = 0; //4 gives a good level of trace.
+if (!context) {
+  XSRETURN_UNDEF;
+}
+smbc_setDebug(context, 4); //4 gives a good level of trace.
 set_fn(workgroup, user, password);
-context->callbacks.auth_fn=auth_fn;
-context->debug = debug;
+smbc_setFunctionAuthData(context, auth_fn);
+smbc_setDebug(context, debug);
 if (smbc_init_context(context) == 0) {
   smbc_free_context(context, 1); 
-  RETVAL=0;
-} else {
-  RETVAL = context; 
-}
+  XSRETURN_UNDEF;
+} 
+RETVAL = context; 
 #ifdef VERBOSE
   fprintf(stderr, "! Filesys::SmbClient : "
-	          "init %d context\n", context); 
+	          "init %p context\n", context); 
 #endif
 OUTPUT:
   RETVAL
 
 
-int
-_set_flags(context, flag)
-  SMBCCTX *context
-  int flag
+int 
+_shutdown(SMBCCTX *context, int flag)
 CODE:
-/* 
- * Create directory fname
- *
- */
-#ifdef HAVE_SMBCTXX_FLAG
-    context->flags = flag;
-#endif
-#ifdef VERBOSE
-  fprintf(stderr, "! Filesys::SmbClient : "
-                  "_set_flags value %d\n", flag); 
-#endif
-  RETVAL = 1;
+    smbc_free_context(context, flag);
+    RETVAL = 1;
 OUTPUT:
-  RETVAL
+    RETVAL
 
+NO_OUTPUT void
+_setOptionUseKerberos(SMBCCTX *context, int b)
+    CODE:
+        smbc_setOptionUseKerberos(context, b);
+
+NO_OUTPUT void
+_setOptionNoAutoAnonymousLogin(SMBCCTX *context, int b)
+    CODE:
+        smbc_setOptionNoAutoAnonymousLogin(context, b);
+
+NO_OUTPUT void
+_setOptionFallbackAfterKerberos(SMBCCTX *context, int b)
+    CODE:
+        smbc_setOptionFallbackAfterKerberos(context, b);
 
 int
-_mkdir(context, fname, mode)
-  SMBCCTX *context
-  char *fname
-  int mode
+_mkdir(SMBCCTX *context, char *fname, int mode)
 CODE:
 /* 
  * Create directory fname
  *
  */
-RETVAL = context->mkdir(context, fname, mode);
+RETVAL = smbc_getFunctionMkdir(context)(context, fname, mode);
 if (RETVAL < 0) {
   RETVAL=0;
 #ifdef VERBOSE
@@ -113,7 +114,7 @@ CODE:
  * Remove directory fname
  *
  */
-RETVAL = context->rmdir(context, fname);
+RETVAL = smbc_getFunctionRmdir(context)(context, fname);
 if (RETVAL < 0) {
   RETVAL = 0;
 #ifdef VERBOSE
@@ -135,7 +136,7 @@ CODE:
  * Open directory fname
  *
  */
-  RETVAL = context->opendir(context, fname);
+  RETVAL = smbc_getFunctionOpendir(context)(context, fname);
 #ifdef VERBOSE
   fprintf(stderr, "! Filesys::SmbClient : _opendir: %d\n", RETVAL); 
 #endif
@@ -162,7 +163,7 @@ CODE:
  * Close file descriptor for directory fd
  *
  */
-RETVAL = context->closedir(context, fd);
+RETVAL = smbc_getFunctionClosedir(context)(context, fd);
 #ifdef VERBOSE
   if (RETVAL < 0) { 
     fprintf(stderr, "*** Error Filesys::SmbClient : "
@@ -194,7 +195,7 @@ PPCODE:
 #if !(defined (__SVR4) && defined (__sun)) && !defined(_AIX)
 #undef readdir
 #endif
-  dirp = (struct smbc_dirent *)context->readdir(context, fd);
+  dirp = (struct smbc_dirent *)smbc_getFunctionReaddir(context)(context, fd);
   if (dirp) {
     XPUSHs(sv_2mortal(newSVnv(dirp->smbc_type)));
 /*
@@ -222,7 +223,7 @@ PREINIT:
   int i;
   struct stat buf;
 PPCODE:
-  i = context->stat(context, fname, &buf);
+  i = smbc_getFunctionStat(context)(context, fname, &buf);
   if (i == 0) {
     XPUSHs(sv_2mortal(newSVnv(buf.st_dev)));
     XPUSHs(sv_2mortal(newSVnv(buf.st_ino)));
@@ -244,8 +245,6 @@ PPCODE:
     XPUSHs(sv_2mortal(newSVnv(0)));
 }
 
-
-
 void
 _fstat(context, fd)
   SMBCCTX *context
@@ -258,7 +257,7 @@ PREINIT:
   int i;
   struct stat buf;
 PPCODE:
-i = context->fstat(context, fd, &buf);
+i = smbc_getFunctionFstat(context)(context, fd, &buf);
 if (i == 0) {
   XPUSHs(sv_2mortal(newSVnv(buf.st_dev)));
   XPUSHs(sv_2mortal(newSVnv(buf.st_ino)));
@@ -277,9 +276,6 @@ if (i == 0) {
   XPUSHs(sv_2mortal(newSVnv(errno)));
 }
 
-
-
-
 int
 _rename(context, oname, nname)
   SMBCCTX *context
@@ -290,7 +286,7 @@ CODE:
  * Rename old file oname in nname
  *
  */
-RETVAL = context->rename(context, oname, context, nname);
+RETVAL = smbc_getFunctionRename(context)(context, oname, context, nname);
 if (RETVAL < 0) { 
   RETVAL = 0;
 #ifdef VERBOSE	
@@ -335,7 +331,7 @@ fprintf(stderr, "! Filesys::SmbClient :"
     flags = O_RDONLY; fname++; 
   /* Mod < */
   } else flags =  O_RDONLY;
-RETVAL = context->open(context, fname, flags, mode);	
+RETVAL = smbc_getFunctionOpen(context)(context, fname, flags, mode);	
 #ifdef VERBOSE
   fprintf(stderr, "! Filesys::SmbClient :"
 	          "Open %s return %d\n", fname, RETVAL); 
@@ -346,7 +342,7 @@ if (RETVAL < 0) {
  fprintf(stderr, "*** Error Filesys::SmbClient :"
                  "Open %s : %s\n", fname, strerror(errno)); 
 #endif
-} else if (seek_end) { context->lseek(context, RETVAL, 0, SEEK_END); }
+} else if (seek_end) { smbc_getFunctionLseek(context)(context, RETVAL, 0, SEEK_END); }
 OUTPUT:
   RETVAL
 
@@ -365,7 +361,7 @@ PREINIT:
   int returnValue;
 CODE:
   buf = (char*)alloca(sizeof(char)*(count+1));
-  returnValue = context->read(context, fd, buf, count);
+  returnValue = smbc_getFunctionRead(context)(context, fd, buf, count);
   buf[returnValue]='\0';
 #ifdef VERBOSE
   if (returnValue <= 0){ 
@@ -389,7 +385,7 @@ CODE:
  * Write buf on file descriptor fd
  *
  */
-  RETVAL=context->write(context, fd, buf, count);
+  RETVAL=smbc_getFunctionWrite(context)(context, fd, buf, count);
 #ifdef VERBOSE
   fprintf(stderr, "! Filesys::SmbClient :"
 	          "write %d bytes: %s\n",count, buf);	
@@ -415,7 +411,7 @@ _lseek(context, fd,offset,whence)
   int offset
   int whence
 CODE:
-  RETVAL=context->lseek(context, fd, offset, whence);
+  RETVAL=smbc_getFunctionLseek(context)(context, fd, offset, whence);
 #ifdef VERBOSE
 if (RETVAL < 0) { 
   if (RETVAL == EBADF) 
@@ -442,11 +438,7 @@ CODE:
  * Close file desriptor fd
  *
  */
-#ifdef HAVE_CLOSEFN
-  RETVAL=context->close_fn(context, fd);
-#else
-  RETVAL=context->close(context, fd);
-#endif
+  RETVAL=smbc_getFunctionClose(context)(context, fd);
 OUTPUT:
   RETVAL
 
@@ -461,7 +453,7 @@ CODE:
  * Remove file fname
  *
  */
-  RETVAL = context->unlink(context, fname);
+  RETVAL = smbc_getFunctionUnlink(context)(context, fname);
   if (RETVAL < 0) { 
     RETVAL = 0;
 #ifdef VERBOSE	
@@ -474,8 +466,7 @@ OUTPUT:
 
 
 int
-_unlink_print_job(context, purl, id)
-  SMBCCTX *context
+_unlink_print_job(purl, id)
   char *purl
   int id
 CODE:
@@ -495,8 +486,7 @@ OUTPUT:
 
 
 int
-_print_file(context, purl, printer)
-  SMBCCTX *context
+_print_file(purl, printer)
   char *purl
   char *printer
 CODE:

@@ -2,9 +2,9 @@
 #include <string.h>
 #include "libauthSamba.h"
 
-char User[30];
-char Password[30];
-char Workgroup[30];
+char User[100];
+char Password[100];
+char Workgroup[100];
 
 /*-----------------------------------------------------------------------------
  * set_fn
@@ -47,12 +47,12 @@ void auth_fn(const char *server,
     fprintf("Workgroup is set to %s", Workgroup);
 #endif
     strcpy(workgroup, Workgroup);
-    wgmaxlen = 30;
+    wgmaxlen = 100;
   }
   strcpy(username, User);
-  unmaxlen = 30;
+  unmaxlen = 100;
   strcpy(password, Password);
-  pwmaxlen = 30;
+  pwmaxlen = 100;
 
 #ifdef VERBOSE
   fprintf(stdout, "username: [%s]\n", username);
@@ -63,40 +63,3 @@ void auth_fn(const char *server,
 
 }
 
-/*-----------------------------------------------------------------------------
- * ask_auth_fn
- *---------------------------------------------------------------------------*/
-void ask_auth_fn(const char *server, 
-	     const char *share,
-	     char *workgroup, int wgmaxlen,
-	     char *username, int unmaxlen,
-	     char *password, int pwmaxlen)
-{  
-  char temp[128];
-
-  fprintf(stdout, "Need password for //%s/%s\n", server, share);
-
-  fprintf(stdout, "Enter workgroup: [%s] ", workgroup);
-  fgets(temp, sizeof(temp), stdin);
-
-  if (temp[strlen(temp) - 1] == 0x0a) /* A new line? */
-    temp[strlen(temp) - 1] = 0x00;
-
-  if (temp[0]) strncpy(workgroup, temp, wgmaxlen - 1);
-
-  fprintf(stdout, "Enter username: [%s] ", username);
-  fgets(temp, sizeof(temp), stdin);
-
-  if (temp[strlen(temp) - 1] == 0x0a) /* A new line? */
-    temp[strlen(temp) - 1] = 0x00;
-
-  if (temp[0]) strncpy(username, temp, unmaxlen - 1);
-
-  fprintf(stdout, "Enter password: [%s] ", password);
-  fgets(temp, sizeof(temp), stdin);
-
-  if (temp[strlen(temp) - 1] == 0x0a) /* A new line? */
-    temp[strlen(temp) - 1] = 0x00;
-
-  if (temp[0]) strncpy(password, temp, pwmaxlen - 1); 
-}
