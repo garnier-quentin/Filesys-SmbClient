@@ -83,6 +83,16 @@ _setOptionFallbackAfterKerberos(SMBCCTX *context, int b)
     CODE:
         smbc_setOptionFallbackAfterKerberos(context, b);
 
+NO_OUTPUT void
+_setTimeout(SMBCCTX *context, int timeout)
+    CODE:
+        smbc_setTimeout(context, timeout);
+
+NO_OUTPUT void
+_setPort(SMBCCTX *context, int port)
+    CODE:
+        smbc_setPort(context, port);
+
 int
 _mkdir(SMBCCTX *context, char *fname, int mode)
 CODE:

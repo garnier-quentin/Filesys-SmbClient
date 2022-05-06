@@ -251,6 +251,8 @@ sub new   {
   if ($vars{'useKerberos'}) { _setOptionUseKerberos($self->{context}, $vars{'useKerberos'}); };
   if ($vars{'noAutoAnonymousLogin'}) { _setOptionNoAutoAnonymousLogin($self->{context}, $vars{'noAutoAnonymousLogin'}); };
   if ($vars{'fallbackAfterKerberos'}) { _setOptionFallbackAfterKerberos($self->{context}, $vars{'fallbackAfterKerberos'}); };
+  if ($vars{'timeout'} && $vars{'timeout'} =~ /^[0-9]+$/) { _setTimeout($self->{context}, $vars{'timeout'}); };
+  if ($vars{'port'} && $vars{'port'} =~ /^[0-9]+$/) { _setPort($self->{context}, $vars{'port'}); };
   return $self;
 }
 
